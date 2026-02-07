@@ -68,7 +68,7 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 # ===================== LOAD MODEL =====================
-lstm_model = load_model("model/lstm_model.h5")
+lstm_model = load_model("model/lstm_model.h5", compile=False)
 
 # ===================== DASHBOARD =====================
 st.title("📈 Stock Price Prediction using LSTM")
@@ -249,5 +249,6 @@ if total > 0:
     st.progress(accuracy / 100)
 else:
     st.info("No evaluated predictions yet.")
+
 
 
