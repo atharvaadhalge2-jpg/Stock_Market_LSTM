@@ -1,5 +1,4 @@
 # ===================== IMPORTS =====================
-from auth import update_actual_price, evaluate_predictions
 import streamlit as st
 import yfinance as yf
 import numpy as np
@@ -7,32 +6,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 
-# ===============================
-# DUMMY PREDICTION (DEPLOY SAFE)
-# ===============================
-def dummy_predict(last_price: float) -> float:
-    """
-    Deploy-safe dummy prediction.
-    Real model unavailable on cloud.
-    """
-    return float(last_price * 1.01)  # +1% fake growth
-
-
-
-
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
-
-def build_dummy_model(input_shape=(60, 1)):
-    model = Sequential()
-    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
-    model.add(LSTM(50))
-    model.add(Dense(1))
-    return model
-
-
-
-from tensorflow.keras.models import load_model # type: ignore
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
@@ -43,8 +16,18 @@ from auth import (
     create_prediction_table,
     save_prediction,
     get_user_predictions,
-    get_prediction_stats
+    get_prediction_stats,
+    update_actual_price,
+    evaluate_predictions,
+    get_accuracy
 )
+
+# ===============================
+# DUMMY PREDICTION (DEPLOY SAFE)
+# ===============================
+def dummy_predict(last_price):
+    return float(last_price * 1.01)  # +1% fake growth
+
 
 # ===================== INIT DB =====================
 create_user_table()
@@ -92,12 +75,9 @@ if st.sidebar.button("Logout"):
     st.session_state.username = None
     st.rerun()
 
-# ===================== LOAD MODEL =====================
-lstm_model = build_dummy_model()
-
 # ===================== DASHBOARD =====================
 st.title("📈 Stock Price Prediction using LSTM")
-st.write("Predict next-day stock price using Deep Learning (LSTM)")
+st.write("Predict next-day stock price (deploy-safe demo model)")
 
 stock = st.selectbox(
     "📊 Select Stock",
@@ -105,18 +85,13 @@ stock = st.selectbox(
 )
 
 # ===================== LOAD DATA =====================
-df = yf.download(stock, start="2018-01-01", end="2024-12-31")
+df = yf.download(stock, start="2018-01-01")
 
 if df.empty:
     st.error("❌ Failed to fetch stock data.")
     st.stop()
 
 df = df[["Close"]].dropna()
-
-# ===================== SCALE DATA =====================
-data = df["Close"].values.reshape(-1, 1)
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data)
 
 # ===================== HISTORICAL GRAPH =====================
 st.subheader("📊 Historical Stock Prices")
@@ -126,89 +101,33 @@ ax.legend()
 st.pyplot(fig)
 
 # ===================== PREDICTION =====================
-lookback = 60
-
 if st.button("🚀 Predict Next Day Price"):
+    last_price = float(df["Close"].values[-1])
+    next_price = dummy_predict(last_price)
 
-    if len(scaled_data) < lookback:
-        st.warning("Not enough data (need at least 60 days).")
-    else:
-        last_60_days = scaled_data[-lookback:]
-        X_input = last_60_days.reshape(1, lookback, 1)
+    st.subheader("📈 Next Day Predicted Price")
+    st.success(f"₹ {next_price:.2f}")
 
-        predicted = lstm_model.predict(X_input)
-        predicted = scaler.inverse_transform(predicted)
-        next_price = predicted[0][0]
+    signal = "BUY" if next_price > last_price else "SELL"
+    st.success("🟢 BUY Signal" if signal == "BUY" else "🔴 SELL Signal")
 
-        st.subheader("📈 Next Day Predicted Price")
-        st.success(f"₹ {next_price:.2f}")
+    # ---------- GRAPH ----------
+    last_60 = df["Close"].values[-60:]
+    pred_line = np.append(last_60[1:], next_price)
 
-        last_price = df["Close"].values[-1]
-        signal = "BUY" if next_price > last_price else "SELL"
-        if next_price > last_price:
-            st.success("🟢 BUY Signal")
-        else:
-            st.error("🔴 SELL Signal")
+    fig2, ax2 = plt.subplots()
+    ax2.plot(last_60, label="Last 60 Days")
+    ax2.plot(pred_line, linestyle="dashed", label="Prediction")
+    ax2.legend()
+    st.pyplot(fig2)
 
-        # -------- GRAPH ----------
-        last_actual = df["Close"].values[-lookback:]
-        pred_line = np.append(last_actual[1:], next_price)
-
-        fig2, ax2 = plt.subplots()
-        ax2.plot(last_actual, label="Last 60 Days")
-        ax2.plot(pred_line, linestyle="dashed", label="Prediction")
-        ax2.legend()
-        st.pyplot(fig2)
-
-        # -------- SAVE ----------
-        signal = "BUY" if next_price > last_price else "SELL"
-
-
-next_price = dummy_predict(last_price)
-save_prediction(
-    st.session_state.username,
-    stock,
-    float(round(next_price, 2)),
-    signal
-)
-
-
-# ================== ACTUAL PRICE UPDATE ==================
-actual_df = yf.download(stock, period="1d")
-
-if not actual_df.empty:
-    actual_price = float(actual_df["Close"].values[-1])
-
-    update_actual_price(stock, actual_price)
-    evaluate_predictions()
-
-    st.success(f"✅ Actual price updated: ₹{actual_price:.2f}")
-
-
-
-
-
-
-# ===================== RMSE / MAE =====================
-X_test, y_test = [], []
-
-for i in range(lookback, len(scaled_data)):
-    X_test.append(scaled_data[i-lookback:i, 0])
-    y_test.append(scaled_data[i, 0])
-
-X_test, y_test = np.array(X_test), np.array(y_test)
-X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
-
-predicted_prices = lstm_model.predict(X_test)
-predicted_prices = scaler.inverse_transform(predicted_prices)
-y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
-
-rmse = math.sqrt(mean_squared_error(y_test, predicted_prices))
-mae = mean_absolute_error(y_test, predicted_prices)
-
-st.subheader("📉 Model Performance")
-st.metric("RMSE", round(rmse, 2))
-st.metric("MAE", round(mae, 2))
+    # ---------- SAVE ----------
+    save_prediction(
+        st.session_state.username,
+        stock,
+        round(next_price, 2),
+        signal
+    )
 
 # ===================== HISTORY =====================
 st.subheader("📜 Your Prediction History")
@@ -224,31 +143,22 @@ if history:
 else:
     st.info("No predictions yet.")
 
+# ===================== ANALYTICS =====================
 st.subheader("📊 Your Trading Analytics")
 
 total, buy_count, sell_count = get_prediction_stats(st.session_state.username)
 
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Total Predictions", total)
-col2.metric("BUY Signals", buy_count)
-col3.metric("SELL Signals", sell_count)
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Predictions", total)
+c2.metric("BUY Signals", buy_count)
+c3.metric("SELL Signals", sell_count)
 
 if total > 0:
     buy_pct = (buy_count / total) * 100
     st.progress(buy_pct / 100)
     st.caption(f"BUY Accuracy Trend: {buy_pct:.1f}%")
 
-
-from auth import get_accuracy
-
-accuracy = get_accuracy(st.session_state.username)
-
-st.subheader("🎯 Prediction Accuracy")
-st.metric("Overall Accuracy", f"{accuracy:.1f}%")
-
-
-
+# ===================== UPDATE ACTUAL PRICE =====================
 st.subheader("📅 Update Actual Price (Next Day)")
 
 if st.button("🔄 Fetch Today's Actual Price"):
@@ -256,29 +166,16 @@ if st.button("🔄 Fetch Today's Actual Price"):
 
     if not actual_df.empty:
         actual_price = float(actual_df["Close"].values[-1])
-
         update_actual_price(stock, actual_price)
         evaluate_predictions()
-
-        st.success(f"Actual price updated: ₹{actual_price}")
+        st.success(f"Actual price updated: ₹{actual_price:.2f}")
         st.rerun()
     else:
         st.error("Failed to fetch actual price")
 
+# ===================== ACCURACY =====================
 st.subheader("🎯 Prediction Accuracy")
 
-correct = sum(1 for row in history if row[-2] == 1)
-total = len(history)
-
-if total > 0:
-    accuracy = (correct / total) * 100
-    st.metric("Overall Accuracy", f"{accuracy:.1f}%")
-    st.progress(accuracy / 100)
-else:
-    st.info("No evaluated predictions yet.")
-
-
-
-
-
-
+accuracy = get_accuracy(st.session_state.username)
+st.metric("Overall Accuracy", f"{accuracy:.1f}%")
+st.progress(accuracy / 100 if accuracy > 0 else 0)
