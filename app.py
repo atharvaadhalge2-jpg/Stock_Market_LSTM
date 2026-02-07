@@ -7,6 +7,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 
+# ===============================
+# DUMMY PREDICTION (DEPLOY SAFE)
+# ===============================
+def dummy_predict(last_price: float) -> float:
+    """
+    Deploy-safe dummy prediction.
+    Real model unavailable on cloud.
+    """
+    return float(last_price * 1.01)  # +1% fake growth
+
+
+
+
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 
@@ -263,6 +276,7 @@ if total > 0:
     st.progress(accuracy / 100)
 else:
     st.info("No evaluated predictions yet.")
+
 
 
 
