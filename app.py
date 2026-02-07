@@ -150,6 +150,8 @@ if st.button("🚀 Predict Next Day Price"):
         # -------- SAVE ----------
         signal = "BUY" if next_price > last_price else "SELL"
 
+
+next_price = dummy_predict(last_price)
 save_prediction(
     st.session_state.username,
     stock,
@@ -261,6 +263,7 @@ if total > 0:
     st.progress(accuracy / 100)
 else:
     st.info("No evaluated predictions yet.")
+
 
 
 
