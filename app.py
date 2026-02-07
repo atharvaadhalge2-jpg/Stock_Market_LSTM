@@ -7,6 +7,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+
+def build_dummy_model(input_shape=(60, 1)):
+    model = Sequential()
+    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(50))
+    model.add(Dense(1))
+    return model
+
+
+
 from tensorflow.keras.models import load_model # type: ignore
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -68,7 +80,7 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 # ===================== LOAD MODEL =====================
-lstm_model = load_model("model/lstm_model.h5", compile=False)
+lstm_model = build_dummy_model()
 
 # ===================== DASHBOARD =====================
 st.title("📈 Stock Price Prediction using LSTM")
@@ -249,6 +261,7 @@ if total > 0:
     st.progress(accuracy / 100)
 else:
     st.info("No evaluated predictions yet.")
+
 
 
 
