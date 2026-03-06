@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 
+from tensorflow.keras.models import load_model # type: ignore
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
@@ -22,25 +23,16 @@ from auth import (
     get_accuracy
 )
 
-# ===============================
-# DUMMY PREDICTION (DEPLOY SAFE)
-# ===============================
-def dummy_predict(last_price):
-    return float(last_price * 1.01)  # +1% fake growth
-
-
-# ===================== INIT DB =====================
+# ===================== INIT =====================
 create_user_table()
 create_prediction_table()
 
-# ===================== PAGE CONFIG =====================
 st.set_page_config(page_title="Stock Price Predictor", layout="wide")
 
-# ===================== SESSION =====================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# ===================== LOGIN / SIGNUP =====================
+# ===================== LOGIN =====================
 if not st.session_state.logged_in:
     st.title("🔐 Login / Signup")
 
@@ -60,40 +52,82 @@ if not st.session_state.logged_in:
             if login_user(username, password):
                 st.session_state.logged_in = True
                 st.session_state.username = username
-                st.success("Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid username or password")
 
     st.stop()
 
+if "accepted_disclaimer" not in st.session_state:
+    st.session_state.accepted_disclaimer = False
+
 # ===================== SIDEBAR =====================
 st.sidebar.success(f"Welcome {st.session_state.username}")
 
-if st.sidebar.button("Logout"):
+if st.sidebar.button("Logout", key="logout_btn"):
     st.session_state.logged_in = False
     st.session_state.username = None
     st.rerun()
 
+
+# ===================== DISCLAIMER PAGE =====================
+
+if not st.session_state.accepted_disclaimer:
+
+    st.title("⚠️ Important Disclaimer")
+
+    st.markdown("""
+    ## Stock Market Risk Disclosure
+
+    - This application provides AI-based stock analysis.
+    - It does NOT execute real buying or selling.
+    - Predictions are based on historical data using LSTM.
+    - Stock markets are highly volatile.
+    - The developer is not responsible for financial losses.
+    - For educational and research purposes only.
+
+    Please read carefully before proceeding.
+    """)
+
+    if st.button("✅ I Understand and Agree", key="agree_btn"):
+        st.session_state.accepted_disclaimer = True
+        st.rerun()
+
+    st.stop()
+
+
+
 # ===================== DASHBOARD =====================
 st.title("📈 Stock Price Prediction using LSTM")
-st.write("Predict next-day stock price (deploy-safe demo model)")
+st.write("Predict next-day stock price using Deep Learning (LSTM)")
 
+st.caption("Educational AI analysis tool. Not for real trading.")
+
+# ===================== LOAD MODEL =====================
+lstm_model = load_model("model/lstm_model.h5")
+
+# ===================== SELECT STOCK =====================
 stock = st.selectbox(
     "📊 Select Stock",
-    ["AAPL", "MSFT", "GOOGL", "TSLA", "AMZN"]
+    ["AAPL", "MSFT", "GOOGL", "TSLA", "AMZN"],
+    key="stock_select"
 )
 
 # ===================== LOAD DATA =====================
-df = yf.download(stock, start="2018-01-01")
+df = yf.download(stock, start="2018-01-01", end="2024-12-31")
 
 if df.empty:
-    st.error("❌ Failed to fetch stock data.")
+    st.error("Failed to fetch stock data.")
     st.stop()
 
 df = df[["Close"]].dropna()
 
-# ===================== HISTORICAL GRAPH =====================
+# ===================== SCALE =====================
+data = df["Close"].values.reshape(-1, 1)
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data)
+
+# ===================== GRAPH =====================
 st.subheader("📊 Historical Stock Prices")
 fig, ax = plt.subplots()
 ax.plot(df["Close"], label="Actual Price")
@@ -101,33 +135,65 @@ ax.legend()
 st.pyplot(fig)
 
 # ===================== PREDICTION =====================
-if st.button("🚀 Predict Next Day Price"):
-    last_price = float(df["Close"].values[-1])
-    next_price = dummy_predict(last_price)
+lookback = 60
 
-    st.subheader("📈 Next Day Predicted Price")
-    st.success(f"₹ {next_price:.2f}")
+if st.button("🚀 Predict Next Day Price", key="predict_btn"):
 
-    signal = "BUY" if next_price > last_price else "SELL"
-    st.success("🟢 BUY Signal" if signal == "BUY" else "🔴 SELL Signal")
+    if len(scaled_data) >= lookback:
 
-    # ---------- GRAPH ----------
-    last_60 = df["Close"].values[-60:]
-    pred_line = np.append(last_60[1:], next_price)
+        last_60 = scaled_data[-lookback:]
+        X_input = last_60.reshape(1, lookback, 1)
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(last_60, label="Last 60 Days")
-    ax2.plot(pred_line, linestyle="dashed", label="Prediction")
-    ax2.legend()
-    st.pyplot(fig2)
+        predicted = lstm_model.predict(X_input)
+        predicted = scaler.inverse_transform(predicted)
+        next_price = predicted[0][0]
 
-    # ---------- SAVE ----------
-    save_prediction(
-        st.session_state.username,
-        stock,
-        round(next_price, 2),
-        signal
-    )
+        st.subheader("📈 Next Day Predicted Price")
+        st.success(f"₹ {next_price:.2f}")
+
+        last_price = df["Close"].values[-1]
+        signal = "BUY" if next_price > last_price else "SELL"
+
+        st.subheader("📊 Analysis Result")
+
+        if signal == "BUY":
+            st.success("🟢 BUY Signal")
+            st.info("Uptrend detected (Predicted price higher than current price)")
+        else:
+            st.error("🔴 SELL Signal")
+            st.warning("Downtrend detected (Predicted price lower than current price)")
+
+        save_prediction(
+            st.session_state.username,
+            stock,
+            float(round(next_price, 2)),
+            signal
+        )
+
+# ===================== MODEL PERFORMANCE =====================
+X_test, y_test = [], []
+
+for i in range(lookback, len(scaled_data)):
+    X_test.append(scaled_data[i-lookback:i, 0])
+    y_test.append(scaled_data[i, 0])
+
+X_test = np.array(X_test)
+y_test = np.array(y_test)
+
+X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
+
+predicted_prices = lstm_model.predict(X_test)
+predicted_prices = scaler.inverse_transform(predicted_prices)
+y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
+
+rmse = math.sqrt(mean_squared_error(y_test, predicted_prices))
+mae = mean_absolute_error(y_test, predicted_prices)
+
+st.subheader("📉 Model Performance")
+st.metric("RMSE", round(rmse, 2))
+st.metric("MAE", round(mae, 2))
+
+
 
 # ===================== HISTORY =====================
 st.subheader("📜 Your Prediction History")
@@ -143,39 +209,42 @@ if history:
 else:
     st.info("No predictions yet.")
 
-# ===================== ANALYTICS =====================
+# ===================== TRADING ANALYTICS =====================
 st.subheader("📊 Your Trading Analytics")
 
 total, buy_count, sell_count = get_prediction_stats(st.session_state.username)
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Predictions", total)
-c2.metric("BUY Signals", buy_count)
-c3.metric("SELL Signals", sell_count)
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Total Predictions", total)
+col2.metric("BUY Signals", buy_count)
+col3.metric("SELL Signals", sell_count)
 
 if total > 0:
     buy_pct = (buy_count / total) * 100
     st.progress(buy_pct / 100)
-    st.caption(f"BUY Accuracy Trend: {buy_pct:.1f}%")
+    st.caption(f"BUY Trend: {buy_pct:.1f}%")
+
+# ===================== ACCURACY =====================
+accuracy = get_accuracy(st.session_state.username)
+
+st.subheader("🎯 Prediction Accuracy")
+st.metric("Overall Accuracy", f"{accuracy:.1f}%")
 
 # ===================== UPDATE ACTUAL PRICE =====================
 st.subheader("📅 Update Actual Price (Next Day)")
 
-if st.button("🔄 Fetch Today's Actual Price"):
+if st.button("🔄 Fetch Today's Actual Price", key="fetch_price_btn"):
+
     actual_df = yf.download(stock, period="1d")
 
     if not actual_df.empty:
         actual_price = float(actual_df["Close"].values[-1])
+
         update_actual_price(stock, actual_price)
         evaluate_predictions()
+
         st.success(f"Actual price updated: ₹{actual_price:.2f}")
         st.rerun()
     else:
-        st.error("Failed to fetch actual price")
-
-# ===================== ACCURACY =====================
-st.subheader("🎯 Prediction Accuracy")
-
-accuracy = get_accuracy(st.session_state.username)
-st.metric("Overall Accuracy", f"{accuracy:.1f}%")
-st.progress(accuracy / 100 if accuracy > 0 else 0)
+        st.error("Failed to fetch actual price.")
