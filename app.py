@@ -97,7 +97,7 @@ st.caption("Educational AI analysis tool. Not for real trading.")
 
 # ===================== LOAD MODEL =====================
 try:
-    lstm_model = load_model("model/lstm_model.h5")
+    lstm_model = load_model("model/lstm_model.h5", compile=False)
 except:
     st.error("Model failed to load. Please redeploy.")
     st.stop()
@@ -277,3 +277,4 @@ if st.button("🔄 Fetch Today's Actual Price"):
     else:
 
         st.error("Failed to fetch actual price")
+
