@@ -255,3 +255,4 @@ if st.button("Fetch Today Price"):
 
         st.success("Predicted Price: " + str(round(next_price,2)))
 
+
