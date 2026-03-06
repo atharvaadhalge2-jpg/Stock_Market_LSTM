@@ -1,4 +1,5 @@
 # ===================== IMPORTS =====================
+import os
 import streamlit as st
 import yfinance as yf
 import numpy as np
@@ -6,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import load_model # type: ignore
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
@@ -32,9 +33,8 @@ st.set_page_config(page_title="Stock Price Predictor", layout="wide")
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# ===================== LOGIN PAGE =====================
+# ===================== LOGIN =====================
 if not st.session_state.logged_in:
-
     st.title("🔐 Login / Signup")
 
     option = st.radio("Choose Option", ["Login", "Signup"])
@@ -59,53 +59,86 @@ if not st.session_state.logged_in:
 
     st.stop()
 
-# ===================== DISCLAIMER =====================
 if "accepted_disclaimer" not in st.session_state:
     st.session_state.accepted_disclaimer = False
 
+# ===================== SIDEBAR =====================
+st.sidebar.success(f"Welcome {st.session_state.username}")
+
+if st.sidebar.button("Logout", key="logout_btn"):
+    st.session_state.logged_in = False
+    st.session_state.username = None
+    st.rerun()
+
+
+# ===================== DISCLAIMER PAGE =====================
+
 if not st.session_state.accepted_disclaimer:
 
-    st.title("⚠️ Risk Disclaimer")
+    st.title("⚠️ Important Disclaimer")
 
     st.markdown("""
-    ### Stock Market Risk Disclosure
+    ## Stock Market Risk Disclosure
 
-    - This application provides **AI-based stock analysis**
-    - It **does NOT execute real buying or selling**
-    - Predictions are based on **historical data using LSTM**
-    - Stock markets are **highly volatile**
-    - The developer is **not responsible for financial losses**
-    - For **educational purposes only**
+    - This application provides AI-based stock analysis.
+    - It does NOT execute real buying or selling.
+    - Predictions are based on historical data using LSTM.
+    - Stock markets are highly volatile.
+    - The developer is not responsible for financial losses.
+    - For educational and research purposes only.
+
+    Please read carefully before proceeding.
     """)
 
-    if st.button("✅ I Understand and Agree"):
+    if st.button("✅ I Understand and Agree", key="agree_btn"):
         st.session_state.accepted_disclaimer = True
         st.rerun()
 
     st.stop()
 
-# ===================== SIDEBAR =====================
-st.sidebar.success(f"Welcome {st.session_state.username}")
 
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.rerun()
 
 # ===================== DASHBOARD =====================
 st.title("📈 Stock Price Prediction using LSTM")
+st.write("Predict next-day stock price using Deep Learning (LSTM)")
+
 st.caption("Educational AI analysis tool. Not for real trading.")
 
 # ===================== LOAD MODEL =====================
-try:
-    lstm_model = load_model("model/lstm_model.h5", compile=False)
-except Exception as e:
-    st.error("Model failed to load: {e}")
+@st.cache_resource
+def get_model():
+    # Use absolute path based on current file location to ensure it works anywhere (e.g., Streamlit Cloud)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(base_dir, "model", "lstm_model.h5")
+    
+    try:
+        if not os.path.exists(model_path):
+            # Fallback to local relative path just in case
+            model_path = "model/lstm_model.h5"
+            
+        if not os.path.exists(model_path):
+            st.error("Model file not found. Please ensure 'lstm_model.h5' exists in the 'model' directory.")
+            return None
+            
+        # Load with compile=False to avoid custom object/optimizer issues on Streamlit Cloud
+        model = load_model(model_path, compile=False)
+        return model
+    except Exception as e:
+        st.error(f"Model failed to load: {str(e)}")
+        st.info("Suggestion: Ensure TensorFlow/Keras is correctly specified in your 'requirements.txt' and is compatible with your model.")
+        return None
+
+lstm_model = get_model()
+
+if lstm_model is None:
+    st.warning("App paused. Fix the model loading issue to proceed.")
     st.stop()
 
 # ===================== SELECT STOCK =====================
 stock = st.selectbox(
     "📊 Select Stock",
-    ["AAPL", "MSFT", "GOOGL", "TSLA", "AMZN"]
+    ["AAPL", "MSFT", "GOOGL", "TSLA", "AMZN"],
+    key="stock_select"
 )
 
 # ===================== LOAD DATA =====================
@@ -117,74 +150,59 @@ if df.empty:
 
 df = df[["Close"]].dropna()
 
-# ===================== SCALE DATA =====================
+# ===================== SCALE =====================
 data = df["Close"].values.reshape(-1, 1)
-
 scaler = MinMaxScaler()
 scaled_data = scaler.fit_transform(data)
 
 # ===================== GRAPH =====================
 st.subheader("📊 Historical Stock Prices")
-
 fig, ax = plt.subplots()
-
 ax.plot(df["Close"], label="Actual Price")
-
 ax.legend()
-
 st.pyplot(fig)
 
 # ===================== PREDICTION =====================
 lookback = 60
 
-if st.button("🚀 Predict Next Day Price"):
+if st.button("🚀 Predict Next Day Price", key="predict_btn"):
 
-    if len(scaled_data) < lookback:
-        st.warning("Not enough data (need 60 days)")
-        st.stop()
+    if len(scaled_data) >= lookback:
 
-    last_60 = scaled_data[-lookback:]
+        last_60 = scaled_data[-lookback:]
+        X_input = last_60.reshape(1, lookback, 1)
 
-    X_input = last_60.reshape(1, lookback, 1)
+        predicted = lstm_model.predict(X_input)
+        predicted = scaler.inverse_transform(predicted)
+        next_price = predicted[0][0]
 
-    predicted = lstm_model.predict(X_input)
+        st.subheader("📈 Next Day Predicted Price")
+        st.success(f"₹ {next_price:.2f}")
 
-    predicted = scaler.inverse_transform(predicted)
+        last_price = df["Close"].values[-1]
+        signal = "BUY" if next_price > last_price else "SELL"
 
-    next_price = predicted[0][0]
+        st.subheader("📊 Analysis Result")
 
-    st.subheader("📈 Next Day Predicted Price")
+        if signal == "BUY":
+            st.success("🟢 BUY Signal")
+            st.info("Uptrend detected (Predicted price higher than current price)")
+        else:
+            st.error("🔴 SELL Signal")
+            st.warning("Downtrend detected (Predicted price lower than current price)")
 
-    st.success(f"₹ {next_price:.2f}")
-
-    last_price = df["Close"].values[-1]
-
-    signal = "BUY" if next_price > last_price else "SELL"
-
-    st.subheader("📊 Analysis Result")
-
-    if signal == "BUY":
-        st.success("🟢 BUY Signal")
-        st.info("Predicted price higher than current price")
-    else:
-        st.error("🔴 SELL Signal")
-        st.warning("Predicted price lower than current price")
-
-    save_prediction(
-        st.session_state.username,
-        stock,
-        float(round(next_price, 2)),
-        signal
-    )
+        save_prediction(
+            st.session_state.username,
+            stock,
+            float(round(next_price, 2)),
+            signal
+        )
 
 # ===================== MODEL PERFORMANCE =====================
-X_test = []
-y_test = []
+X_test, y_test = [], []
 
 for i in range(lookback, len(scaled_data)):
-
     X_test.append(scaled_data[i-lookback:i, 0])
-
     y_test.append(scaled_data[i, 0])
 
 X_test = np.array(X_test)
@@ -193,20 +211,17 @@ y_test = np.array(y_test)
 X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
 
 predicted_prices = lstm_model.predict(X_test)
-
 predicted_prices = scaler.inverse_transform(predicted_prices)
-
 y_test = scaler.inverse_transform(y_test.reshape(-1, 1))
 
 rmse = math.sqrt(mean_squared_error(y_test, predicted_prices))
-
 mae = mean_absolute_error(y_test, predicted_prices)
 
 st.subheader("📉 Model Performance")
-
 st.metric("RMSE", round(rmse, 2))
-
 st.metric("MAE", round(mae, 2))
+
+
 
 # ===================== HISTORY =====================
 st.subheader("📜 Your Prediction History")
@@ -214,68 +229,50 @@ st.subheader("📜 Your Prediction History")
 history = get_user_predictions(st.session_state.username)
 
 if history:
-
     df_history = pd.DataFrame(
         history,
         columns=["Stock", "Predicted Price (₹)", "Date"]
     )
-
     st.dataframe(df_history)
-
 else:
-    st.info("No predictions yet")
+    st.info("No predictions yet.")
 
-# ===================== ANALYTICS =====================
+# ===================== TRADING ANALYTICS =====================
 st.subheader("📊 Your Trading Analytics")
 
-total, buy_count, sell_count = get_prediction_stats(
-    st.session_state.username
-)
+total, buy_count, sell_count = get_prediction_stats(st.session_state.username)
 
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Total Predictions", total)
-
 col2.metric("BUY Signals", buy_count)
-
 col3.metric("SELL Signals", sell_count)
 
 if total > 0:
-
     buy_pct = (buy_count / total) * 100
-
     st.progress(buy_pct / 100)
-
     st.caption(f"BUY Trend: {buy_pct:.1f}%")
 
 # ===================== ACCURACY =====================
 accuracy = get_accuracy(st.session_state.username)
 
 st.subheader("🎯 Prediction Accuracy")
-
 st.metric("Overall Accuracy", f"{accuracy:.1f}%")
 
 # ===================== UPDATE ACTUAL PRICE =====================
-st.subheader("📅 Update Actual Price")
+st.subheader("📅 Update Actual Price (Next Day)")
 
-if st.button("🔄 Fetch Today's Actual Price"):
+if st.button("🔄 Fetch Today's Actual Price", key="fetch_price_btn"):
 
     actual_df = yf.download(stock, period="1d")
 
     if not actual_df.empty:
-
         actual_price = float(actual_df["Close"].values[-1])
 
         update_actual_price(stock, actual_price)
-
         evaluate_predictions()
 
         st.success(f"Actual price updated: ₹{actual_price:.2f}")
-
         st.rerun()
-
     else:
-
-        st.error("Failed to fetch actual price")
-
-
+        st.error("Failed to fetch actual price.")
