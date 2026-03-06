@@ -121,7 +121,7 @@ def get_model():
             return None
             
         # Load with compile=False to avoid custom object/optimizer issues on Streamlit Cloud
-        model = load_model(model_path, compile=False)
+        model = load_model("model/lstm_model.h5", compile=False)
         return model
     except Exception as e:
         st.error(f"Model failed to load: {str(e)}")
@@ -276,3 +276,4 @@ if st.button("🔄 Fetch Today's Actual Price", key="fetch_price_btn"):
         st.rerun()
     else:
         st.error("Failed to fetch actual price.")
+
