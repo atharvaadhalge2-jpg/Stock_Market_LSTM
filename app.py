@@ -253,4 +253,5 @@ if st.button("Fetch Today Price"):
         update_actual_price(stock,actual_price)
         evaluate_predictions()
 
-        st.success(f"Updated price ₹{actual_price:.2f}")
+        st.success("Predicted Price: " + str(round(next_price,2)))
+
