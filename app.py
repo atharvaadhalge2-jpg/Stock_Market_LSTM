@@ -107,7 +107,11 @@ st.caption("Educational AI analysis tool. Not for real trading.")
 try:
     lstm_model = load_model("model/lstm_model.h5")
 except:
-    st.error("Model failed to load. Please redeploy.")
+    lstm_model = None
+
+if lstm_model is None:
+    st.error   ("Model not loaded. Please redeploy the app.")
+    st.stop()
 
 # ===================== SELECT STOCK =====================
 stock = st.selectbox(
@@ -261,5 +265,6 @@ if st.button("🔄 Fetch Today's Actual Price", key="fetch_price_btn"):
         st.rerun()
     else:
         st.error("Failed to fetch actual price.")
+
 
 
