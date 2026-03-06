@@ -1,9 +1,9 @@
-streamlit==1.32.0
+streamlit
 yfinance
 numpy
 pandas
 matplotlib
 scikit-learn
-tensorflow==2.10.0
-keras==2.10.0
-h5py==3.7.0
+tensorflow-cpu
+keras
+h5py
