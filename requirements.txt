@@ -4,5 +4,6 @@ numpy
 pandas
 matplotlib
 scikit-learn
-tensorflow-cpu==2.12.0
-keras==2.12.0
+tensorflow==2.10.0
+keras==2.10.0
+h5py==3.7.0
