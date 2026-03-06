@@ -104,7 +104,10 @@ st.write("Predict next-day stock price using Deep Learning (LSTM)")
 st.caption("Educational AI analysis tool. Not for real trading.")
 
 # ===================== LOAD MODEL =====================
-lstm_model = load_model("model/lstm_model.h5")
+try:
+    lstm_model = load_model("model/lstm_model.h5")
+except:
+    st.error("Model failed to load. Please redeploy.")
 
 # ===================== SELECT STOCK =====================
 stock = st.selectbox(
@@ -248,3 +251,4 @@ if st.button("🔄 Fetch Today's Actual Price", key="fetch_price_btn"):
         st.rerun()
     else:
         st.error("Failed to fetch actual price.")
+
