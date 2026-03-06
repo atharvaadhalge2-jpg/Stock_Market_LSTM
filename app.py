@@ -147,7 +147,17 @@ if st.button("🚀 Predict Next Day Price", key="predict_btn"):
         last_60 = scaled_data[-lookback:]
         X_input = last_60.reshape(1, lookback, 1)
 
-        predicted = lstm_model.predict(X_input)
+
+        if 'lstm_model' not in globals():
+    st.error("Model not loaded. Please redeploy the app.")
+    st.stop()
+
+predicted = lstm_model.predict(X_input)
+
+
+
+
+        
         predicted = scaler.inverse_transform(predicted)
         next_price = predicted[0][0]
 
@@ -251,4 +261,5 @@ if st.button("🔄 Fetch Today's Actual Price", key="fetch_price_btn"):
         st.rerun()
     else:
         st.error("Failed to fetch actual price.")
+
 
