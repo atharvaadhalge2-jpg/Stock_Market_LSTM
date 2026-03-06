@@ -1,11 +1,7 @@
-
 streamlit
-tensorflow==2.13.0
-numpy
-pandas
+tensorflow==2.12.0
 yfinance
+pandas
+numpy
 scikit-learn
 matplotlib
-
-
-
